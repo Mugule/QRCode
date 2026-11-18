@@ -1,4 +1,5 @@
 import io
+import math
 
 import streamlit as st
 import qrcode
@@ -28,14 +29,32 @@ niveau = st.sidebar.selectbox(
     help="Plus le niveau est élevé, plus le QR reste lisible s'il est abîmé ou masqué (par un logo par exemple).",
 )
 
-taille_case = st.sidebar.slider("Taille des cases (pixels)", 2, 20, 10)
-bordure = st.sidebar.slider("Marge autour du QR (cases)", 0, 10, 4)
+taille_case = st.sidebar.number_input("Taille des cases (pixels)", min_value=1, value=10, step=1)
+bordure = st.sidebar.number_input("Marge autour du QR (cases)", min_value=0, value=4, step=1)
 
 st.sidebar.subheader("Logo")
 logo_fichier = st.sidebar.file_uploader("Logo au centre (optionnel)", type=["png", "jpg", "jpeg"])
-taille_logo = st.sidebar.slider("Taille du logo (pixels)", 20, 400, 80)
+taille_logo = st.sidebar.number_input("Taille du logo (pixels)", min_value=1, value=80, step=1)
 fond_logo = st.sidebar.checkbox("Fond derrière le logo", value=True)
-marge_logo = st.sidebar.slider("Marge autour du logo (pixels)", 0, 50, 10, disabled=not fond_logo)
+marge_logo = st.sidebar.number_input(
+    "Marge minimale autour du logo (pixels)",
+    min_value=0,
+    value=10,
+    step=1,
+    disabled=not fond_logo,
+    help="Le fond est ensuite agrandi pour tomber pile sur les cases du QR code.",
+)
+
+
+def cases_impaires(pixels, taille_case):
+    """Nombre de cases nécessaires pour couvrir `pixels`, arrondi au nombre impair supérieur.
+
+    Un QR code a toujours un nombre impair de cases de côté (21, 25, 29...).
+    Un fond avec un nombre impair de cases peut donc être centré exactement sur la grille.
+    """
+    n = math.ceil(pixels / taille_case)
+    return n if n % 2 == 1 else n + 1
+
 
 # --- Génération ---
 if st.button("Envoyer"):
@@ -68,23 +87,35 @@ if st.button("Envoyer"):
                 Image.LANCZOS,
             )
 
-            if taille_logo > img.size[0] * 0.3:
-                st.warning(
-                    f"Le logo ({taille_logo} px) dépasse 30 % de la largeur du QR code "
-                    f"({img.size[0]} px) : il risque de ne plus se scanner."
-                )
-
-            # Position au centre
-            x = (img.size[0] - logo.size[0]) // 2
-            y = (img.size[1] - logo.size[1]) // 2
+            nb_cases = qr.modules_count            # cases de côté du QR (sans la marge)
+            largeur_qr = nb_cases * taille_case    # largeur du QR en pixels (sans la marge)
 
             if fond_logo:
-                marge = marge_logo
+                # Taille du fond en cases (impaire), puis en pixels
+                cases_l = cases_impaires(logo.size[0] + 2 * marge_logo, taille_case)
+                cases_h = cases_impaires(logo.size[1] + 2 * marge_logo, taille_case)
+
+                # Position du fond alignée sur la grille des cases
+                fx = (bordure + (nb_cases - cases_l) // 2) * taille_case
+                fy = (bordure + (nb_cases - cases_h) // 2) * taille_case
+
                 img.paste(
-                    Image.new("RGB", (logo.size[0] + 2 * marge, logo.size[1] + 2 * marge), couleur_fond),
-                    (x - marge, y - marge),
+                    Image.new("RGB", (cases_l * taille_case, cases_h * taille_case), couleur_fond),
+                    (fx, fy),
+                )
+                zone_masquee = max(cases_l, cases_h) * taille_case
+            else:
+                zone_masquee = max(logo.size)
+
+            if zone_masquee > largeur_qr * 0.3:
+                st.warning(
+                    f"Le logo et son fond ({zone_masquee} px) dépassent 30 % de la largeur du QR code "
+                    f"({largeur_qr} px) : il risque de ne plus se scanner."
                 )
 
+            # Logo au centre exact de l'image
+            x = (img.size[0] - logo.size[0]) // 2
+            y = (img.size[1] - logo.size[1]) // 2
             img.paste(logo, (x, y), mask=logo)
 
         buffer = io.BytesIO()
