@@ -33,8 +33,9 @@ bordure = st.sidebar.slider("Marge autour du QR (cases)", 0, 10, 4)
 
 st.sidebar.subheader("Logo")
 logo_fichier = st.sidebar.file_uploader("Logo au centre (optionnel)", type=["png", "jpg", "jpeg"])
-taille_logo = st.sidebar.slider("Taille du logo (% du QR)", 10, 35, 25)
+taille_logo = st.sidebar.slider("Taille du logo (pixels)", 20, 400, 80)
 fond_logo = st.sidebar.checkbox("Fond derrière le logo", value=True)
+marge_logo = st.sidebar.slider("Marge autour du logo (pixels)", 0, 50, 10, disabled=not fond_logo)
 
 # --- Génération ---
 if st.button("Envoyer"):
@@ -60,15 +61,25 @@ if st.button("Envoyer"):
             logo = Image.open(logo_fichier).convert("RGBA")
 
             # Redimensionnement du logo en gardant ses proportions
-            cote = int(img.size[0] * taille_logo / 100)
-            logo.thumbnail((cote, cote))
+            # (le côté le plus long du logo fera taille_logo pixels)
+            ratio = taille_logo / max(logo.size)
+            logo = logo.resize(
+                (max(1, round(logo.size[0] * ratio)), max(1, round(logo.size[1] * ratio))),
+                Image.LANCZOS,
+            )
+
+            if taille_logo > img.size[0] * 0.3:
+                st.warning(
+                    f"Le logo ({taille_logo} px) dépasse 30 % de la largeur du QR code "
+                    f"({img.size[0]} px) : il risque de ne plus se scanner."
+                )
 
             # Position au centre
             x = (img.size[0] - logo.size[0]) // 2
             y = (img.size[1] - logo.size[1]) // 2
 
             if fond_logo:
-                marge = taille_case
+                marge = marge_logo
                 img.paste(
                     Image.new("RGB", (logo.size[0] + 2 * marge, logo.size[1] + 2 * marge), couleur_fond),
                     (x - marge, y - marge),
